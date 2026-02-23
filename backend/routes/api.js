@@ -7,6 +7,8 @@ const Loan = require('../models/Loan');
 const algorandService = require('../services/algorandService');
 const logicService = require('../services/logicService');
 
+const isBlockchainStrict = () => process.env.BLOCKCHAIN_STRICT === 'true';
+
 // Helper to get or create the single pool
 const getPool = async () => {
     let pool = await Pool.findOne();
@@ -125,11 +127,18 @@ router.post('/contribute', async (req, res) => {
 
         const pool = await getPool();
 
-        // Blockchain Transaction
-        await algorandService.contributeToPoolUsingEnv({
-            contributorMnemonic: user.mnemonic,
-            amountAlgo: amount
-        });
+        let txResult = null;
+        try {
+            txResult = await algorandService.contributeToPoolUsingEnv({
+                contributorMnemonic: user.mnemonic,
+                amountAlgo: amount
+            });
+        } catch (chainErr) {
+            if (isBlockchainStrict()) {
+                throw chainErr;
+            }
+            console.warn('Contribute fallback (off-chain mode):', chainErr.message);
+        }
 
         // DB Updates
         pool.balance += Number(amount);
@@ -138,9 +147,15 @@ router.post('/contribute', async (req, res) => {
         user.reputationScore = logicService.calculateReputationAfterContribution(user.reputationScore);
         await user.save();
 
-        res.json({ pool, user });
+        res.json({
+            pool,
+            user,
+            txId: txResult?.txId || null,
+            blockchain: txResult ? 'on-chain' : 'off-chain-fallback'
+        });
     } catch (err) {
-        res.status(500).send('Server error');
+        console.error('Contribute error:', err);
+        res.status(500).json({ msg: err.message || 'Server error' });
     }
 });
 
@@ -170,30 +185,56 @@ router.post('/borrow', async (req, res) => {
             return res.status(400).json({ msg: eligibility.reason });
         }
 
-        pool.balance -= Number(amount);
-        await pool.save();
+        let txResult = null;
+        try {
+            txResult = await algorandService.borrowFromPoolUsingEnv({
+                borrowerMnemonic: user.mnemonic,
+                amountAlgo: amount
+            });
+        } catch (chainErr) {
+            if (isBlockchainStrict()) {
+                throw chainErr;
+            }
+            console.warn('Borrow fallback (off-chain mode):', chainErr.message);
+        }
 
-        // Blockchain Transaction
-        const txResult = await algorandService.borrowFromPoolUsingEnv({
-            borrowerMnemonic: user.mnemonic,
-            amountAlgo: amount
-        });
-
-        const currentRound = await algorandService.getCurrentRound();
+        let currentRound = 0;
+        try {
+            const currentRoundRaw = await algorandService.getCurrentRound();
+            const parsedRound = Number(currentRoundRaw);
+            if (!Number.isFinite(parsedRound)) {
+                throw new Error('Invalid round value from Algorand node');
+            }
+            currentRound = parsedRound;
+        } catch (roundErr) {
+            if (isBlockchainStrict()) {
+                throw roundErr;
+            }
+            console.warn('Borrow round fallback (off-chain mode):', roundErr.message);
+            currentRound = 0;
+        }
 
         const loan = new Loan({
             userId,
             amount: Number(amount),
-            txId: txResult.txId,
+            txId: txResult?.txId || `offchain-${Date.now()}`,
             status: 'active',
             dueRound: currentRound + logicService.LOAN_DURATION_ROUNDS
         });
         await loan.save();
 
-        res.json({ pool, loan });
+        pool.balance -= Number(amount);
+        await pool.save();
+
+        res.json({
+            pool,
+            loan,
+            txId: txResult?.txId || null,
+            blockchain: txResult ? 'on-chain' : 'off-chain-fallback'
+        });
     } catch (err) {
-        console.error("Borrow Error:", err); // ADDED LOGGING
-        res.status(500).send('Server error: ' + err.message);
+        console.error('Borrow error:', err);
+        res.status(500).json({ msg: err.message || 'Server error' });
     }
 });
 
@@ -207,11 +248,18 @@ router.post('/repay', async (req, res) => {
         const user = await User.findById(loan.userId);
         if (!user) return res.status(404).json({ msg: 'User not found' });
 
-        // Blockchain Transaction
-        const txResult = await algorandService.repayLoanUsingEnv({
-            borrowerMnemonic: user.mnemonic,
-            amountAlgo: loan.amount
-        });
+        let txResult = null;
+        try {
+            txResult = await algorandService.repayLoanUsingEnv({
+                borrowerMnemonic: user.mnemonic,
+                amountAlgo: loan.amount
+            });
+        } catch (chainErr) {
+            if (isBlockchainStrict()) {
+                throw chainErr;
+            }
+            console.warn('Repay fallback (off-chain mode):', chainErr.message);
+        }
 
         // DB Updates
         const pool = await getPool();
@@ -219,11 +267,25 @@ router.post('/repay', async (req, res) => {
         await pool.save();
 
         loan.status = 'repaid';
-        loan.txId = txResult.txId;
+        loan.txId = txResult?.txId || loan.txId;
         await loan.save();
 
         // Increase reputation
-        const currentRound = await algorandService.getCurrentRound();
+        let currentRound = 0;
+        try {
+            const currentRoundRaw = await algorandService.getCurrentRound();
+            const parsedRound = Number(currentRoundRaw);
+            if (!Number.isFinite(parsedRound)) {
+                throw new Error('Invalid round value from Algorand node');
+            }
+            currentRound = parsedRound;
+        } catch (roundErr) {
+            if (isBlockchainStrict()) {
+                throw roundErr;
+            }
+            console.warn('Repay round fallback (off-chain mode):', roundErr.message);
+            currentRound = 0;
+        }
         user.reputationScore = logicService.calculateReputationAfterRepayment(
             user.reputationScore,
             currentRound,
@@ -231,9 +293,16 @@ router.post('/repay', async (req, res) => {
         );
         await user.save();
 
-        res.json({ pool, loan, user });
+        res.json({
+            pool,
+            loan,
+            user,
+            txId: txResult?.txId || null,
+            blockchain: txResult ? 'on-chain' : 'off-chain-fallback'
+        });
     } catch (err) {
-        res.status(500).send('Server error');
+        console.error('Repay error:', err);
+        res.status(500).json({ msg: err.message || 'Server error' });
     }
 });
 
