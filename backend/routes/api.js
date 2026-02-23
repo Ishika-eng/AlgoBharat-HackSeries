@@ -62,6 +62,10 @@ router.post('/signup', async (req, res) => {
 
 router.post('/login', async (req, res) => {
     const { email, password } = req.body;
+    if (!email || !password) {
+        return res.status(400).json({ msg: 'Email and password are required' });
+    }
+
     try {
         const user = await User.findOne({ email });
         if (!user) return res.status(400).json({ msg: 'Invalid credentials' });
@@ -78,7 +82,8 @@ router.post('/login', async (req, res) => {
             res.status(400).json({ msg: 'Invalid credentials' });
         }
     } catch (err) {
-        res.status(500).send('Server error');
+        console.error('Login error:', err);
+        res.status(500).json({ msg: 'Server error' });
     }
 });
 
