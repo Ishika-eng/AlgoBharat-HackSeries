@@ -13,11 +13,12 @@ const Dashboard = ({ user, setUser }) => {
     const [sessionError, setSessionError] = useState(false);
 
     useEffect(() => {
+        if (!user || !user._id) return;
         fetchData();
         // Set up polling to update data every 5 seconds
         const interval = setInterval(fetchData, 5000);
         return () => clearInterval(interval);
-    }, []);
+    }, [user]);
 
     useEffect(() => {
         if (sessionError) {
@@ -27,6 +28,11 @@ const Dashboard = ({ user, setUser }) => {
     }, [sessionError, navigate]);
 
     const fetchData = async () => {
+        if (!user || !user._id) {
+            setLoading(false);
+            return;
+        }
+        
         const [poolResult, userResult] = await Promise.allSettled([
             api.get('/pool'),
             api.get(`/user/${user._id}`)
