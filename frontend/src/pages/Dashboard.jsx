@@ -10,6 +10,7 @@ const Dashboard = ({ user, setUser }) => {
     const [loading, setLoading] = useState(true);
     const [amount, setAmount] = useState('');
     const navigate = useNavigate();
+    const [sessionError, setSessionError] = useState(false);
 
     useEffect(() => {
         fetchData();
@@ -17,6 +18,13 @@ const Dashboard = ({ user, setUser }) => {
         const interval = setInterval(fetchData, 5000);
         return () => clearInterval(interval);
     }, []);
+
+    useEffect(() => {
+        if (sessionError) {
+            localStorage.removeItem('user');
+            navigate('/login');
+        }
+    }, [sessionError, navigate]);
 
     const fetchData = async () => {
         const [poolResult, userResult] = await Promise.allSettled([
@@ -33,6 +41,9 @@ const Dashboard = ({ user, setUser }) => {
         if (userResult.status === 'fulfilled') {
             setUser(userResult.value.data.user);
             setLoans(userResult.value.data.loans);
+        } else if (userResult.reason?.response?.status === 404) {
+            console.error('User session invalid (404):', userResult.reason);
+            setSessionError(true);
         } else {
             console.error('User fetch failed:', userResult.reason);
         }
@@ -81,6 +92,7 @@ const Dashboard = ({ user, setUser }) => {
     };
 
     if (loading) return <div className="min-h-screen flex items-center justify-center bg-gray-50">Loading...</div>;
+    if (!user) return null;
 
     const activeLoan = loans.find(l => l.status === 'active');
 
