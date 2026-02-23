@@ -19,19 +19,25 @@ const Dashboard = ({ user, setUser }) => {
     }, []);
 
     const fetchData = async () => {
-        try {
-            const [poolRes, userRes] = await Promise.all([
-                api.get('/pool'),
-                api.get(`/user/${user._id}`)
-            ]);
-            setPool(poolRes.data);
-            setUser(userRes.data.user); // Update user state with fresh data (reputation etc)
-            setLoans(userRes.data.loans);
-            setLoading(false);
-        } catch (err) {
-            console.error(err);
-            setLoading(false);
+        const [poolResult, userResult] = await Promise.allSettled([
+            api.get('/pool'),
+            api.get(`/user/${user._id}`)
+        ]);
+
+        if (poolResult.status === 'fulfilled') {
+            setPool(poolResult.value.data);
+        } else {
+            console.error('Pool fetch failed:', poolResult.reason);
         }
+
+        if (userResult.status === 'fulfilled') {
+            setUser(userResult.value.data.user);
+            setLoans(userResult.value.data.loans);
+        } else {
+            console.error('User fetch failed:', userResult.reason);
+        }
+
+        setLoading(false);
     };
 
     const handleLogout = () => {
