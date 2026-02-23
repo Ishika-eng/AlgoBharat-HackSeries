@@ -28,7 +28,12 @@ const Login = ({ setUser }) => {
             toast.success(isLogin ? 'Welcome back!' : 'Account created!', { id: toastId });
             navigate('/dashboard');
         } catch (err) {
-            toast.error(err.response?.data?.msg || 'An error occurred', { id: toastId });
+            const errorMessage =
+                err.response?.data?.msg ||
+                err.response?.data ||
+                (err.response?.status ? `Request failed (${err.response.status})` : err.message) ||
+                'An error occurred';
+            toast.error(errorMessage, { id: toastId });
         }
     };
 
