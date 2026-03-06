@@ -17,10 +17,13 @@ const Login = ({ setUser }) => {
         try {
             let res;
             if (isLogin) {
+                console.log("Attempting Login to:", api.defaults.baseURL + '/login');
                 res = await api.post('/login', { email, password });
             } else {
+                console.log("Attempting Signup to:", api.defaults.baseURL + '/signup', { name, email });
                 res = await api.post('/signup', { name, email, password });
             }
+            console.log("Response received:", res.data);
 
             setUser(res.data);
             localStorage.setItem('user', JSON.stringify(res.data));

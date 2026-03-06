@@ -48,14 +48,21 @@ const startServer = async () => {
             throw new Error('MONGO_URI is not set');
         }
 
-        await mongoose.connect(process.env.MONGO_URI);
-        console.log('MongoDB connected');
+        await mongoose.connect(process.env.MONGO_URI, {
+            useNewUrlParser: true,
+            useUnifiedTopology: true,
+            dbName: 'CampusTrust' // Explicitly set to avoid defaulting to 'test'
+        });
+
+        console.log(`✅ MongoDB Connected`);
+        console.log(`   Host: ${mongoose.connection.host}`);
+        console.log(`   Database: ${mongoose.connection.name}`);
 
         app.listen(PORT, () => {
             console.log(`Server running on port ${PORT}`);
         });
     } catch (err) {
-        console.error('Failed to start server:', err.message);
+        console.error('❌ Failed to start server:', err.message);
         process.exit(1);
     }
 };

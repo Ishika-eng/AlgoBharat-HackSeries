@@ -4,8 +4,10 @@ require('dotenv').config();
 // Connect to MongoDB
 const db = process.env.MONGO_URI;
 
-mongoose.connect(db)
-    .then(() => console.log("MongoDB Connected"))
-    .catch(err => console.log(err));
+mongoose.connect(db, {
+    dbName: 'CampusTrust'
+})
+    .then(() => console.log("✅ MongoDB Connected (via config/db)"))
+    .catch(err => console.log("❌ MongoDB Connection Error:", err));
 
 module.exports = mongoose;

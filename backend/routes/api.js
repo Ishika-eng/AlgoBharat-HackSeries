@@ -18,6 +18,10 @@ const getPool = async () => {
     }
     return pool;
 };
+// --- HEALTH CHECK ---
+router.get('/health', (req, res) => {
+    res.json({ status: 'ok', timestamp: new Date() });
+});
 
 // --- AUTH ---
 
@@ -32,12 +36,18 @@ router.post('/signup', async (req, res) => {
     if (error) return res.status(400).json({ msg: error.details[0].message });
 
     const { name, email, password } = req.body;
+    console.log(`Signup attempt for: ${email}`);
     try {
         let user = await User.findOne({ email });
-        if (user) return res.status(400).json({ msg: 'User already exists' });
+        if (user) {
+            console.log(`Signup failed: User ${email} already exists`);
+            return res.status(400).json({ msg: 'User already exists' });
+        }
 
+        console.log("Generating wallet...");
         // Generate Algorand wallet
         const wallet = algorandService.createWallet();
+        console.log(`Wallet generated: ${wallet.walletAddress}`);
 
         user = new User({
             name,
@@ -48,6 +58,7 @@ router.post('/signup', async (req, res) => {
         });
 
         await user.save();
+        console.log(`User saved successfully: ${user.email}`);
 
         res.json({
             _id: user._id,
@@ -57,8 +68,8 @@ router.post('/signup', async (req, res) => {
             reputationScore: user.reputationScore
         });
     } catch (err) {
-        console.error(err);
-        res.status(500).send('Server error');
+        console.error("Signup Error:", err);
+        res.status(500).json({ msg: 'Server error: ' + err.message });
     }
 });
 
@@ -84,8 +95,8 @@ router.post('/login', async (req, res) => {
             res.status(400).json({ msg: 'Invalid credentials' });
         }
     } catch (err) {
-        console.error('Login error:', err);
-        res.status(500).json({ msg: 'Server error' });
+        console.error("Login Error:", err);
+        res.status(500).json({ msg: 'Server error: ' + err.message });
     }
 });
 
@@ -154,7 +165,7 @@ router.post('/contribute', async (req, res) => {
             blockchain: txResult ? 'on-chain' : 'off-chain-fallback'
         });
     } catch (err) {
-        console.error('Contribute error:', err);
+        console.error("Contribute Error:", err);
         res.status(500).json({ msg: err.message || 'Server error' });
     }
 });
