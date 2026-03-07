@@ -1,4 +1,4 @@
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { HashRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import Landing from './pages/Landing';
 import Login from './pages/Login';
@@ -34,6 +34,7 @@ function App() {
                     path="/profile"
                     element={user ? <Profile user={user} /> : <Navigate to="/login" />}
                 />
+                <Route path="*" element={<Navigate to={user ? '/dashboard' : '/login'} replace />} />
             </Routes>
         </Router>
     );
