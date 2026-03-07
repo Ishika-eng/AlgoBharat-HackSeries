@@ -23,9 +23,10 @@ const Dashboard = ({ user, setUser }) => {
     useEffect(() => {
         if (sessionError) {
             localStorage.removeItem('user');
-            navigate('/login');
+            setUser(null);
+            navigate('/login', { replace: true });
         }
-    }, [sessionError, navigate]);
+    }, [sessionError, navigate, setUser]);
 
     const fetchData = async () => {
         if (!user || !user._id) {
@@ -59,8 +60,8 @@ const Dashboard = ({ user, setUser }) => {
 
     const handleLogout = () => {
         localStorage.removeItem('user');
-        // Force refresh to clear state and redirect
-        window.location.href = '/login';
+        setUser(null);
+        navigate('/login', { replace: true });
     };
 
     const handleContribute = async () => {
