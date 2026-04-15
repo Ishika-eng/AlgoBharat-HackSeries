@@ -2,8 +2,20 @@ const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
 const dotenv = require('dotenv');
+const fs = require('fs');
+const path = require('path');
 
-dotenv.config({ path: require('path').resolve(__dirname, '.env') });
+const envPath = path.resolve(__dirname, '.env');
+const envExists = fs.existsSync(envPath);
+console.log(`[env] Looking for .env at: ${envPath}`);
+console.log(`[env] .env file exists: ${envExists}`);
+const dotenvResult = dotenv.config({ path: envPath });
+if (dotenvResult.error) {
+    console.log(`[env] dotenv load error: ${dotenvResult.error.message}`);
+} else {
+    console.log(`[env] dotenv loaded ${Object.keys(dotenvResult.parsed || {}).length} key(s) from .env`);
+}
+console.log(`[env] MONGO_URI present in process.env: ${!!process.env.MONGO_URI}`);
 
 const app = express();
 const PORT = process.env.PORT || 5002;
@@ -45,6 +57,18 @@ if (process.env.NODE_ENV !== 'production') {
 const startServer = async () => {
     try {
         if (!process.env.MONGO_URI) {
+            console.error('');
+            console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+            console.error('MONGO_URI is not set.');
+            console.error('');
+            console.error('Fix:');
+            console.error(`  1. Create a file at: ${envPath}`);
+            console.error('  2. Add this line to it:');
+            console.error('     MONGO_URI=mongodb+srv://<user>:<pass>@<cluster>/CampusTrust?retryWrites=true&w=majority');
+            console.error('  3. Run `npm start` again.');
+            console.error('');
+            console.error('If you are deploying to Railway/Vercel, set MONGO_URI as an env var in the dashboard.');
+            console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
             throw new Error('MONGO_URI is not set');
         }
 
