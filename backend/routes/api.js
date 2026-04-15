@@ -4,10 +4,20 @@ const Joi = require('joi');
 const User = require('../models/User');
 const Pool = require('../models/Pool');
 const Loan = require('../models/Loan');
+const Contribution = require('../models/Contribution');
 const algorandService = require('../services/algorandService');
 const logicService = require('../services/logicService');
 
 const isBlockchainStrict = () => process.env.BLOCKCHAIN_STRICT === 'true';
+
+// Build a Pera Testnet explorer URL for a txId (null-safe)
+const explorerTxUrl = (txId) =>
+    txId && !String(txId).startsWith('offchain-')
+        ? `https://testnet.explorer.perawallet.app/tx/${txId}`
+        : null;
+
+const explorerAddressUrl = (address) =>
+    address ? `https://testnet.explorer.perawallet.app/address/${address}` : null;
 
 // Helper to get or create the single pool
 const getPool = async () => {
@@ -107,10 +117,117 @@ router.get('/user/:id', async (req, res) => {
         const user = await User.findById(req.params.id);
         if (!user) return res.status(404).json({ msg: 'User not found' });
 
-        const loans = await Loan.find({ userId: user._id });
-        res.json({ user, loans });
+        const loans = await Loan.find({ userId: user._id }).sort({ createdAt: -1 });
+        // Attach explorer URLs so frontend can render links directly
+        const loansWithLinks = loans.map((l) => ({
+            ...l.toObject(),
+            explorerUrl: explorerTxUrl(l.txId),
+            repayExplorerUrl: explorerTxUrl(l.repayTxId)
+        }));
+        const userObj = user.toObject();
+        delete userObj.mnemonic;
+        delete userObj.password;
+        res.json({
+            user: {
+                ...userObj,
+                walletExplorerUrl: explorerAddressUrl(user.walletAddress)
+            },
+            loans: loansWithLinks
+        });
     } catch (err) {
+        console.error('GET /user/:id error:', err);
         res.status(500).send('Server error');
+    }
+});
+
+// --- ELIGIBILITY PREVIEW ---
+router.get('/eligibility/:userId', async (req, res) => {
+    try {
+        const user = await User.findById(req.params.userId);
+        if (!user) return res.status(404).json({ msg: 'User not found' });
+
+        const activeLoan = await Loan.findOne({ userId: user._id, status: 'active' });
+        const pool = await getPool();
+        const maxLimit = logicService.getLoanLimit(user.reputationScore);
+
+        let tier = 'None';
+        if (user.reputationScore >= 70) tier = 'Gold (max 1000)';
+        else if (user.reputationScore >= 40) tier = 'Silver (max 500)';
+        else tier = 'Ineligible (<40)';
+
+        res.json({
+            reputationScore: user.reputationScore,
+            tier,
+            maxLoanAmount: maxLimit,
+            hasActiveLoan: !!activeLoan,
+            poolBalance: pool.balance,
+            eligible: !activeLoan && maxLimit > 0 && pool.balance > 0,
+            rules: {
+                minReputation: 40,
+                silverTier: '40–69 → 500',
+                goldTier: '≥70 → 1000',
+                onTimeRepayBonus: '+10 reputation',
+                lateRepayPenalty: '−15 reputation',
+                contributionBonus: '+5 reputation'
+            }
+        });
+    } catch (err) {
+        console.error('Eligibility error:', err);
+        res.status(500).json({ msg: 'Server error' });
+    }
+});
+
+// --- LIVE WALLET BALANCE (Algorand Testnet) ---
+router.get('/wallet/:address', async (req, res) => {
+    try {
+        const { address } = req.params;
+        const algod = algorandService.getAlgodClient();
+        const info = await algod.accountInformation(address).do();
+        const microAlgos = info.amount !== undefined ? info.amount : info['amount'];
+        const amount = typeof microAlgos === 'bigint' ? Number(microAlgos) : Number(microAlgos || 0);
+        res.json({
+            address,
+            microAlgos: amount,
+            algo: amount / 1_000_000,
+            explorerUrl: explorerAddressUrl(address),
+            network: 'testnet'
+        });
+    } catch (err) {
+        console.error('Wallet balance error:', err.message);
+        res.status(200).json({
+            address: req.params.address,
+            microAlgos: 0,
+            algo: 0,
+            explorerUrl: explorerAddressUrl(req.params.address),
+            network: 'testnet',
+            error: 'Account not found or unfunded on Testnet'
+        });
+    }
+});
+
+// --- COMMUNITY FUND ACTIVITY ---
+router.get('/contributions', async (req, res) => {
+    try {
+        const limit = Math.min(Number(req.query.limit) || 20, 100);
+        const contributions = await Contribution.find()
+            .populate('userId', 'name walletAddress')
+            .sort({ createdAt: -1 })
+            .limit(limit);
+        const activity = contributions.map((c) => ({
+            _id: c._id,
+            amount: c.amount,
+            txId: c.txId,
+            explorerUrl: explorerTxUrl(c.txId),
+            blockchain: c.blockchain,
+            createdAt: c.createdAt,
+            contributor: c.userId
+                ? { name: c.userId.name, walletAddress: c.userId.walletAddress }
+                : null
+        }));
+        res.json({ contributions: activity });
+    } catch (err) {
+        console.error('Contributions fetch error:', err);
+        res.status(500).json({ msg: 'Server error' });
     }
 });
 
@@ -158,11 +275,24 @@ router.post('/contribute', async (req, res) => {
         user.reputationScore = logicService.calculateReputationAfterContribution(user.reputationScore);
         await user.save();
 
+        const blockchain = txResult ? 'on-chain' : 'off-chain-fallback';
+        const txId = txResult?.txId || `offchain-${Date.now()}`;
+
+        const contribution = new Contribution({
+            userId,
+            amount: Number(amount),
+            txId,
+            blockchain
+        });
+        await contribution.save();
+
         res.json({
             pool,
             user,
+            contribution,
             txId: txResult?.txId || null,
-            blockchain: txResult ? 'on-chain' : 'off-chain-fallback'
+            explorerUrl: explorerTxUrl(txResult?.txId),
+            blockchain
         });
     } catch (err) {
         console.error("Contribute Error:", err);
@@ -229,6 +359,7 @@ router.post('/borrow', async (req, res) => {
             userId,
             amount: Number(amount),
             txId: txResult?.txId || `offchain-${Date.now()}`,
+            blockchain: txResult ? 'on-chain' : 'off-chain-fallback',
             status: 'active',
             dueRound: currentRound + logicService.LOAN_DURATION_ROUNDS
         });
@@ -241,6 +372,7 @@ router.post('/borrow', async (req, res) => {
             pool,
             loan,
             txId: txResult?.txId || null,
+            explorerUrl: explorerTxUrl(txResult?.txId),
             blockchain: txResult ? 'on-chain' : 'off-chain-fallback'
         });
     } catch (err) {
@@ -278,7 +410,8 @@ router.post('/repay', async (req, res) => {
         await pool.save();
 
         loan.status = 'repaid';
-        loan.txId = txResult?.txId || loan.txId;
+        loan.repayTxId = txResult?.txId || `offchain-${Date.now()}`;
+        if (txResult) loan.blockchain = 'on-chain';
         await loan.save();
 
         // Increase reputation
@@ -309,6 +442,7 @@ router.post('/repay', async (req, res) => {
             loan,
             user,
             txId: txResult?.txId || null,
+            explorerUrl: explorerTxUrl(txResult?.txId),
             blockchain: txResult ? 'on-chain' : 'off-chain-fallback'
         });
     } catch (err) {

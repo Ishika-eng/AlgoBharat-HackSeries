@@ -32,8 +32,8 @@ const canBorrow = (user, requestedAmount, hasActiveLoan, poolBalance) => {
         return { allowed: false, reason: "Requested amount must be positive." };
     }
 
-    if (user.reputationScore <= 40) {
-        return { allowed: false, reason: "Reputation must be > 40 to borrow." };
+    if (user.reputationScore < 40) {
+        return { allowed: false, reason: "Reputation must be at least 40 to borrow." };
     }
 
     const limit = getLoanLimit(user.reputationScore);

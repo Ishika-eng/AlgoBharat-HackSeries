@@ -1,9 +1,31 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
-import { User, Mail, CreditCard, Award, ArrowLeft } from 'lucide-react';
+import { CreditCard, ArrowLeft, ExternalLink, RefreshCw } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import api from '../api';
 
 const Profile = ({ user }) => {
+    const [wallet, setWallet] = useState(null);
+    const [loading, setLoading] = useState(false);
+
+    const fetchBalance = async () => {
+        if (!user?.walletAddress) return;
+        setLoading(true);
+        try {
+            const res = await api.get(`/wallet/${user.walletAddress}`);
+            setWallet(res.data);
+        } catch (e) {
+            setWallet({ algo: 0, error: 'Unable to fetch balance' });
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        fetchBalance();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [user?.walletAddress]);
+
     if (!user) return null;
 
     return (
@@ -45,18 +67,58 @@ const Profile = ({ user }) => {
                         </div>
 
                         <div className="space-y-6">
-                            <div className="p-4 bg-gray-50 rounded-xl flex items-center gap-4">
-                                <CreditCard className="text-gray-400" />
-                                <div className="overflow-hidden">
-                                    <p className="text-sm font-medium text-gray-900">Wallet Address</p>
-                                    <p className="text-xs text-gray-500 font-mono truncate">{user.walletAddress || 'Not generated'}</p>
+                            {/* Wallet */}
+                            <div className="p-4 bg-gray-50 rounded-xl">
+                                <div className="flex items-center gap-4">
+                                    <CreditCard className="text-gray-400 shrink-0" />
+                                    <div className="overflow-hidden flex-1">
+                                        <p className="text-sm font-medium text-gray-900">Algorand Wallet</p>
+                                        <p className="text-xs text-gray-500 font-mono truncate">
+                                            {user.walletAddress || 'Not generated'}
+                                        </p>
+                                    </div>
+                                    <button
+                                        onClick={fetchBalance}
+                                        className="text-gray-400 hover:text-brand-600 p-1"
+                                        title="Refresh balance"
+                                    >
+                                        <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+                                    </button>
+                                </div>
+                                <div className="mt-4 grid grid-cols-2 gap-4">
+                                    <div className="p-3 bg-white rounded-lg border border-gray-100">
+                                        <p className="text-xs text-gray-500">On-chain Balance</p>
+                                        <p className="text-lg font-bold text-gray-900">
+                                            {wallet ? `${wallet.algo.toFixed(3)} ALGO` : '—'}
+                                        </p>
+                                        {wallet?.error && (
+                                            <p className="text-[10px] text-amber-600 mt-1">{wallet.error}</p>
+                                        )}
+                                    </div>
+                                    <a
+                                        href={wallet?.explorerUrl || `https://testnet.explorer.perawallet.app/address/${user.walletAddress}`}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="p-3 bg-white rounded-lg border border-gray-100 hover:border-brand-300 transition flex flex-col justify-center"
+                                    >
+                                        <p className="text-xs text-gray-500">Network</p>
+                                        <p className="text-sm font-bold text-brand-700 flex items-center gap-1">
+                                            Algorand Testnet <ExternalLink className="w-3 h-3" />
+                                        </p>
+                                    </a>
                                 </div>
                             </div>
 
                             <div className="grid grid-cols-2 gap-4">
                                 <div className="p-4 border border-gray-100 rounded-xl">
-                                    <p className="text-sm text-gray-500 mb-1">Member Since</p>
-                                    <p className="font-semibold text-gray-900">Feb 2026</p>
+                                    <p className="text-sm text-gray-500 mb-1">Loan Tier</p>
+                                    <p className="font-semibold text-gray-900">
+                                        {user.reputationScore >= 70
+                                            ? 'Gold · up to 1000'
+                                            : user.reputationScore >= 40
+                                                ? 'Silver · up to 500'
+                                                : 'Not eligible'}
+                                    </p>
                                 </div>
                                 <div className="p-4 border border-gray-100 rounded-xl">
                                     <p className="text-sm text-gray-500 mb-1">Status</p>

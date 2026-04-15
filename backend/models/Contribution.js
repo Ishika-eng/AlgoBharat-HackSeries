@@ -1,6 +1,6 @@
 const mongoose = require('mongoose');
 
-const LoanSchema = new mongoose.Schema({
+const ContributionSchema = new mongoose.Schema({
     userId: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'User',
@@ -14,23 +14,10 @@ const LoanSchema = new mongoose.Schema({
         type: String,
         default: ''
     },
-    repayTxId: {
-        type: String,
-        default: ''
-    },
     blockchain: {
         type: String,
         enum: ['on-chain', 'off-chain-fallback'],
         default: 'off-chain-fallback'
-    },
-    status: {
-        type: String,
-        enum: ['active', 'repaid'],
-        default: 'active'
-    },
-    dueRound: {
-        type: Number,
-        default: 0
     },
     createdAt: {
         type: Date,
@@ -38,4 +25,4 @@ const LoanSchema = new mongoose.Schema({
     }
 });
 
-module.exports = mongoose.model('Loan', LoanSchema);
+module.exports = mongoose.model('Contribution', ContributionSchema);
