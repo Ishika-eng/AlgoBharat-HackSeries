@@ -411,10 +411,13 @@ async function getLendingAppId() {
         return parsed;
     }
 
-    // Fallback for demos / self-test: create a fresh app.
-    const created = await createLendingAppUsingEnv();
-    console.log('Created lending ASC1 with appId:', created.appId);
-    return created.appId;
+    // We used to auto-create the app on first call, but that's slow (~10s)
+    // and burns ALGO on every cold start. Require explicit deployment via
+    // `node scripts/deployApp.js` and persistence in .env so the hot path
+    // is fast and predictable.
+    throw new Error(
+        'LENDING_APP_ID is not set. Ask your Algorand teammate for the deployed app ID and put it in backend/.env as LENDING_APP_ID=<number>.'
+    );
 }
 
 /**
@@ -869,6 +872,111 @@ async function getCurrentRound() {
     return status['last-round'];
 }
 
+/**
+ * Report whether on-chain mode is fully configured and (if so) what the
+ * current pool balance / app id are. Used by /api/status and the frontend
+ * "Algorand Status" card so we can see at a glance whether actions will
+ * actually hit the chain.
+ */
+async function getOnChainStatus() {
+    const status = {
+        network: 'testnet',
+        algodServer: ALGOD_CONFIG.server,
+        poolConfigured: false,
+        poolAddress: null,
+        lendingAppId: null,
+        escrowAddress: null,
+        poolBalanceAlgo: null,
+        escrowBalanceAlgo: null,
+        lastRound: null,
+        ready: false,
+        error: null
+    };
+    try {
+        const { poolAddress } = getPoolConfig();
+        status.poolConfigured = true;
+        status.poolAddress = poolAddress;
+    } catch (e) {
+        status.error = e.message;
+        return status;
+    }
+    try {
+        const appId = await getLendingAppId();
+        status.lendingAppId = appId;
+    } catch (e) {
+        status.error = e.message;
+        return status;
+    }
+    try {
+        const algod = getAlgodClient();
+        const sys = await algod.status().do();
+        status.lastRound = Number(sys['last-round'] || sys.lastRound || 0);
+    } catch (e) {
+        status.error = `Algod node unreachable: ${e.message}`;
+        return status;
+    }
+    try {
+        const algod = getAlgodClient();
+        const info = await algod.accountInformation(status.poolAddress).do();
+        const micro = info.amount !== undefined ? info.amount : info['amount'];
+        const n = typeof micro === 'bigint' ? Number(micro) : Number(micro || 0);
+        status.poolBalanceAlgo = n / 1_000_000;
+    } catch (e) {
+        status.error = `Pool account not found on Testnet (probably unfunded): ${e.message}`;
+    }
+    try {
+        const { escrowAddress } = await deployEscrowContractForApp(status.lendingAppId);
+        status.escrowAddress = escrowAddress;
+        const algod = getAlgodClient();
+        try {
+            const einfo = await algod.accountInformation(escrowAddress).do();
+            const em = einfo.amount !== undefined ? einfo.amount : einfo['amount'];
+            const en = typeof em === 'bigint' ? Number(em) : Number(em || 0);
+            status.escrowBalanceAlgo = en / 1_000_000;
+        } catch {
+            status.escrowBalanceAlgo = 0;
+        }
+    } catch (e) {
+        status.error = status.error || `Escrow compile failed: ${e.message}`;
+    }
+    status.ready = !status.error && status.poolBalanceAlgo !== null;
+    return status;
+}
+
+/**
+ * Send a small amount of ALGO from the pool wallet to a newly created
+ * user wallet so it can immediately pay fees, opt into the lending app,
+ * and make its first transaction. Called from /signup. Non-blocking:
+ * if the pool isn't configured this returns null and logs a warning
+ * instead of failing signup.
+ *
+ * Algorand min-balance math for a fresh user who will borrow:
+ *   0.1  account min balance
+ * + 0.1  opt-in to lending app
+ * + 0.002 fees for the borrow atomic group (2 txns)
+ * ≈ 0.21 ALGO required before any user action works.
+ * We send 0.3 ALGO to leave headroom for contribute/repay fees.
+ */
+async function fundNewUserWallet(receiverAddress) {
+    try {
+        const { poolMnemonic } = getPoolConfig();
+        if (!algosdk.isValidAddress(receiverAddress)) {
+            throw new Error('Receiver is not a valid Algorand address.');
+        }
+        const result = await sendPaymentTransaction({
+            senderMnemonic: poolMnemonic,
+            receiverAddress,
+            amountMicroAlgos: 300_000, // 0.3 ALGO
+            noteText: 'CampusTrust: welcome funding'
+        });
+        console.log(`[signup-fund] Sent 0.3 ALGO to ${receiverAddress}: ${result.txId}`);
+        return result;
+    } catch (err) {
+        console.warn(`[signup-fund] Could not fund ${receiverAddress}: ${err.message}`);
+        return null;
+    }
+}
+
 module.exports = {
     getAlgodClient,
     getPoolConfig,
@@ -891,4 +999,6 @@ module.exports = {
     repayLoanUsingEnv,
     algoToMicroAlgo,
     getCurrentRound,
+    getOnChainStatus,
+    fundNewUserWallet,
 };

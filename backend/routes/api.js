@@ -33,6 +33,26 @@ router.get('/health', (req, res) => {
     res.json({ status: 'ok', timestamp: new Date() });
 });
 
+// --- ALGORAND ON-CHAIN STATUS ---
+// Tells the frontend (and you) whether pool wallet, app id, and algod
+// are all healthy. Used by the Dashboard "Algorand Status" card.
+router.get('/status', async (req, res) => {
+    try {
+        const onchain = await algorandService.getOnChainStatus();
+        res.json({
+            ...onchain,
+            poolExplorerUrl: onchain.poolAddress ? explorerAddressUrl(onchain.poolAddress) : null,
+            escrowExplorerUrl: onchain.escrowAddress ? explorerAddressUrl(onchain.escrowAddress) : null,
+            appExplorerUrl: onchain.lendingAppId
+                ? `https://testnet.explorer.perawallet.app/application/${onchain.lendingAppId}`
+                : null,
+            strictMode: process.env.BLOCKCHAIN_STRICT === 'true'
+        });
+    } catch (err) {
+        res.status(500).json({ ready: false, error: err.message });
+    }
+});
+
 // --- AUTH ---
 
 router.post('/signup', async (req, res) => {
@@ -70,12 +90,26 @@ router.post('/signup', async (req, res) => {
         await user.save();
         console.log(`User saved successfully: ${user.email}`);
 
+        // Auto-fund the new wallet from the pool so the user can immediately
+        // pay tx fees + opt into the lending ASC1. Non-blocking: if the pool
+        // isn't configured we log a warning but still return success, and
+        // the user will just see off-chain fallback for their actions.
+        let fundingTxId = null;
+        try {
+            const fundResult = await algorandService.fundNewUserWallet(user.walletAddress);
+            fundingTxId = fundResult?.txId || null;
+        } catch (fundErr) {
+            console.warn('Signup funding failed (non-fatal):', fundErr.message);
+        }
+
         res.json({
             _id: user._id,
             name: user.name,
             email: user.email,
             walletAddress: user.walletAddress,
-            reputationScore: user.reputationScore
+            reputationScore: user.reputationScore,
+            fundingTxId,
+            fundingExplorerUrl: explorerTxUrl(fundingTxId)
         });
     } catch (err) {
         console.error("Signup Error:", err);

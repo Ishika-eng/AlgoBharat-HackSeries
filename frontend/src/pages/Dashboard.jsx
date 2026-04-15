@@ -37,6 +37,7 @@ const Dashboard = ({ user, setUser }) => {
     const [loans, setLoans] = useState([]);
     const [contributions, setContributions] = useState([]);
     const [eligibility, setEligibility] = useState(null);
+    const [chainStatus, setChainStatus] = useState(null);
     const [loading, setLoading] = useState(true);
     const [amount, setAmount] = useState('');
     const navigate = useNavigate();
@@ -64,11 +65,12 @@ const Dashboard = ({ user, setUser }) => {
             return;
         }
 
-        const [poolResult, userResult, contribResult, eligResult] = await Promise.allSettled([
+        const [poolResult, userResult, contribResult, eligResult, statusResult] = await Promise.allSettled([
             api.get('/pool'),
             api.get(`/user/${user._id}`),
             api.get('/contributions?limit=10'),
-            api.get(`/eligibility/${user._id}`)
+            api.get(`/eligibility/${user._id}`),
+            api.get('/status')
         ]);
 
         if (poolResult.status === 'fulfilled') setPool(poolResult.value.data);
@@ -82,6 +84,7 @@ const Dashboard = ({ user, setUser }) => {
             setContributions(contribResult.value.data.contributions || []);
         }
         if (eligResult.status === 'fulfilled') setEligibility(eligResult.value.data);
+        if (statusResult.status === 'fulfilled') setChainStatus(statusResult.value.data);
 
         setLoading(false);
     };
@@ -241,6 +244,49 @@ const Dashboard = ({ user, setUser }) => {
                         </p>
                     </div>
                 </div>
+
+                {/* Algorand Status Card */}
+                {chainStatus && (
+                    <div className={`mb-6 rounded-xl border p-4 ${chainStatus.ready
+                        ? 'bg-emerald-50 border-emerald-200'
+                        : 'bg-amber-50 border-amber-200'}`}>
+                        <div className="flex items-start justify-between gap-4 flex-wrap">
+                            <div className="min-w-0">
+                                <div className="flex items-center gap-2 mb-1">
+                                    <span className={`w-2 h-2 rounded-full ${chainStatus.ready ? 'bg-emerald-500' : 'bg-amber-500'}`} />
+                                    <h3 className={`text-sm font-bold ${chainStatus.ready ? 'text-emerald-900' : 'text-amber-900'}`}>
+                                        {chainStatus.ready ? 'Algorand Testnet — Live' : 'Algorand — Fallback mode'}
+                                    </h3>
+                                </div>
+                                <p className={`text-xs ${chainStatus.ready ? 'text-emerald-800' : 'text-amber-800'}`}>
+                                    {chainStatus.ready
+                                        ? <>App ID <span className="font-mono font-semibold">{chainStatus.lendingAppId}</span> · Pool balance on chain <span className="font-semibold">{chainStatus.poolBalanceAlgo?.toFixed(3)} ALGO</span> · Escrow <span className="font-semibold">{chainStatus.escrowBalanceAlgo?.toFixed(3)} ALGO</span> · Round {chainStatus.lastRound}</>
+                                        : <>Actions will save off-chain until configuration is fixed. {chainStatus.error}</>}
+                                </p>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                {chainStatus.appExplorerUrl && (
+                                    <a href={chainStatus.appExplorerUrl} target="_blank" rel="noreferrer"
+                                        className="inline-flex items-center gap-1 text-xs font-medium text-emerald-800 bg-white border border-emerald-200 rounded-md px-2 py-1 hover:bg-emerald-100">
+                                        ASC1 <ExternalLink className="w-3 h-3" />
+                                    </a>
+                                )}
+                                {chainStatus.poolExplorerUrl && (
+                                    <a href={chainStatus.poolExplorerUrl} target="_blank" rel="noreferrer"
+                                        className="inline-flex items-center gap-1 text-xs font-medium text-emerald-800 bg-white border border-emerald-200 rounded-md px-2 py-1 hover:bg-emerald-100">
+                                        Pool <ExternalLink className="w-3 h-3" />
+                                    </a>
+                                )}
+                                {chainStatus.escrowExplorerUrl && (
+                                    <a href={chainStatus.escrowExplorerUrl} target="_blank" rel="noreferrer"
+                                        className="inline-flex items-center gap-1 text-xs font-medium text-emerald-800 bg-white border border-emerald-200 rounded-md px-2 py-1 hover:bg-emerald-100">
+                                        Escrow <ExternalLink className="w-3 h-3" />
+                                    </a>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                )}
 
                 {/* Eligibility Banner */}
                 {eligibility && (
