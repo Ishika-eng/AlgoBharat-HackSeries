@@ -114,9 +114,9 @@ const Profile = ({ user }) => {
                                     <p className="text-sm text-gray-500 mb-1">Loan Tier</p>
                                     <p className="font-semibold text-gray-900">
                                         {user.reputationScore >= 70
-                                            ? 'Gold · up to 1000'
+                                            ? 'Gold · up to 5 ALGO'
                                             : user.reputationScore >= 40
-                                                ? 'Silver · up to 500'
+                                                ? 'Silver · up to 2 ALGO'
                                                 : 'Not eligible'}
                                     </p>
                                 </div>

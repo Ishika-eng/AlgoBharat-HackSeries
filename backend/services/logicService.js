@@ -7,16 +7,17 @@ const MAX_REPUTATION = 1000;
 
 /**
  * Compute the maximum loan allowed based on reputation.
+ * Amounts are in ALGO and match the on-chain ASC1 borrow_limit (5 ALGO max).
  * - reputation < 40  -> 0 (borrowing disabled)
- * - 40 <= rep <= 69  -> 500
- * - rep >= 70        -> 1000
- * @param {number} reputationScore 
- * @returns {number} maxAmount
+ * - 40 <= rep <= 69  -> 2 ALGO  (Silver tier)
+ * - rep >= 70        -> 5 ALGO  (Gold tier — matches TEAL hardcoded limit)
+ * @param {number} reputationScore
+ * @returns {number} maxAmount in ALGO
  */
 const getLoanLimit = (reputationScore) => {
     if (reputationScore < 40) return 0;
-    if (reputationScore <= 69) return 500;
-    return 1000;
+    if (reputationScore <= 69) return 2;
+    return 5;
 };
 
 /**

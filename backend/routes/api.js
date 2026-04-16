@@ -185,8 +185,8 @@ router.get('/eligibility/:userId', async (req, res) => {
         const maxLimit = logicService.getLoanLimit(user.reputationScore);
 
         let tier = 'None';
-        if (user.reputationScore >= 70) tier = 'Gold (max 1000)';
-        else if (user.reputationScore >= 40) tier = 'Silver (max 500)';
+        if (user.reputationScore >= 70) tier = 'Gold (max 5 ALGO)';
+        else if (user.reputationScore >= 40) tier = 'Silver (max 2 ALGO)';
         else tier = 'Ineligible (<40)';
 
         res.json({
@@ -198,8 +198,8 @@ router.get('/eligibility/:userId', async (req, res) => {
             eligible: !activeLoan && maxLimit > 0 && pool.balance > 0,
             rules: {
                 minReputation: 40,
-                silverTier: '40–69 → 500',
-                goldTier: '≥70 → 1000',
+                silverTier: '40–69 → max 2 ALGO',
+                goldTier: '≥70 → max 5 ALGO',
                 onTimeRepayBonus: '+10 reputation',
                 lateRepayPenalty: '−15 reputation',
                 contributionBonus: '+5 reputation'
